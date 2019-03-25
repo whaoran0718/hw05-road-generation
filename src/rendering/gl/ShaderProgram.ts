@@ -36,6 +36,8 @@ class ShaderProgram {
   unifEye: WebGLUniformLocation;
   unifUp: WebGLUniformLocation;
   unifDimensions: WebGLUniformLocation;
+  unifTexture: WebGLUniformLocation;
+  unifMode: WebGLUniformLocation;
 
   constructor(shaders: Array<Shader>) {
     this.prog = gl.createProgram();
@@ -61,6 +63,8 @@ class ShaderProgram {
     this.unifEye   = gl.getUniformLocation(this.prog, "u_Eye");
     this.unifRef   = gl.getUniformLocation(this.prog, "u_Ref");
     this.unifUp   = gl.getUniformLocation(this.prog, "u_Up");
+    this.unifTexture = gl.getUniformLocation(this.prog, "u_Texture");
+    this.unifMode = gl.getUniformLocation(this.prog, "u_Mode");
   }
 
   use() {
@@ -125,6 +129,44 @@ class ShaderProgram {
     }
   }
 
+  setTexture(tex: ImageData) {
+    this.use();
+    if (this.unifTexture != -1) {
+      let texture = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, tex);
+
+      function isPowerOf2(value: number) {
+        return (value & (value - 1)) == 0;
+      };
+
+      if (isPowerOf2(tex.width) && isPowerOf2(tex.height)) {
+        // the dimensions are power of 2 so generate mips and turn on 
+        // tri-linear filtering.
+        gl.generateMipmap(gl.TEXTURE_2D);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+      } 
+      else {
+        // at least one of the dimensions is not a power of 2 so set the filtering
+        // so WebGL will render it.
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      }
+      
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.uniform1i(this.unifTexture, 0);
+    }
+  }
+
+  setMode(mode: number) {
+    this.use();
+    if (this.unifMode !== -1) {
+      gl.uniform1i(this.unifMode, mode);
+    }
+  }
+
   draw(d: Drawable) {
     this.use();
 
@@ -148,7 +190,7 @@ class ShaderProgram {
 
     if (this.attrTranslate != -1 && d.bindTranslate()) {
       gl.enableVertexAttribArray(this.attrTranslate);
-      gl.vertexAttribPointer(this.attrTranslate, 3, gl.FLOAT, false, 0, 0);
+      gl.vertexAttribPointer(this.attrTranslate, 4, gl.FLOAT, false, 0, 0);
       gl.vertexAttribDivisor(this.attrTranslate, 1); // Advance 1 index in translate VBO for each drawn instance
     }
 
@@ -172,7 +214,12 @@ class ShaderProgram {
     // by the GPU, thus being the same value for the first set of four vertices,
     // then advancing to a new value for the next four, then the next four, and
     // so on.
-    gl.drawElementsInstanced(d.drawMode(), d.elemCount(), gl.UNSIGNED_INT, 0, d.numInstances);
+    if (d.numInstances > 0) {
+      gl.drawElementsInstanced(d.drawMode(), d.elemCount(), gl.UNSIGNED_INT, 0, d.numInstances);
+    }
+    else {
+      gl.drawElements(d.drawMode(), d.elemCount(), gl.UNSIGNED_INT, 0);
+    }
 
     if (this.attrPos != -1) gl.disableVertexAttribArray(this.attrPos);
     if (this.attrNor != -1) gl.disableVertexAttribArray(this.attrNor);

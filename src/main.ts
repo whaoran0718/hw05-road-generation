@@ -1,4 +1,4 @@
-import {vec3} from 'gl-matrix';
+import {vec3, vec2} from 'gl-matrix';
 import * as Stats from 'stats-js';
 import * as DAT from 'dat-gui';
 import Square from './geometry/Square';
@@ -7,46 +7,73 @@ import OpenGLRenderer from './rendering/gl/OpenGLRenderer';
 import Camera from './Camera';
 import {setGL} from './globals';
 import ShaderProgram, {Shader} from './rendering/gl/ShaderProgram';
+import Terrain from './Terrain';
+import Roadmap, { Highway, Street } from './Highway';
 
 // Define an object with application parameters and button callbacks
 // This will be referred to by dat.GUI's functions that add GUI elements.
 const controls = {
+  seed: 52,
+  seaLevel: 0.5,
+  highwayLength: 100,
+  highwayAngle: 90,
+  displayMode: 0,
+  loadScene: function() {
+    if (highwayLength != controls.highwayLength
+      || highwayAngle != controls.highwayAngle
+      || seed != controls.seed
+      || seaLevel != controls.seaLevel)
+    {
+      seed = controls.seed;
+      seaLevel = controls.seaLevel;
+      highwayLength = controls.highwayLength;
+      highwayAngle = controls.highwayAngle;
+
+      ter = new Terrain(resolution, resolution);
+      ter.creatFBM(seed);
+      ter.createMap(seed, seaLevel);
+
+      highwayMesh = new Square();
+      streetMesh = new Square();
+      road = new Roadmap(highwayLength, highwayAngle, blockWidth, blockHeight, ter);
+      road.process(seed, iteration);
+      road.instance(highwayMesh, streetMesh);
+    }
+  }
 };
 
 let square: Square;
-let screenQuad: ScreenQuad;
+let highwayMesh: Square;
+let streetMesh: Square;
 let time: number = 0.0;
+let ter: Terrain;
+let iteration: number = 1000;
+let highwayLength: number;
+let highwayAngle: number;
+let seaLevel: number;
+let seed: number;
+let blockWidth: number = 20;
+let blockHeight: number = 8;
+let road: Roadmap;
+let resolution: number = 512;
 
 function loadScene() {
+  highwayLength = controls.highwayLength;
+  highwayAngle = controls.highwayAngle;
+  seaLevel = controls.seaLevel;
+  seed = controls.seed;
+
   square = new Square();
   square.create();
-  screenQuad = new ScreenQuad();
-  screenQuad.create();
+  ter = new Terrain(resolution, resolution);
+  ter.creatFBM(seed);
+  ter.createMap(seed, seaLevel);
 
-  // Set up instanced rendering data arrays here.
-  // This example creates a set of positional
-  // offsets and gradiated colors for a 100x100 grid
-  // of squares, even though the VBO data for just
-  // one square is actually passed to the GPU
-  let offsetsArray = [];
-  let colorsArray = [];
-  let n: number = 100.0;
-  for(let i = 0; i < n; i++) {
-    for(let j = 0; j < n; j++) {
-      offsetsArray.push(i);
-      offsetsArray.push(j);
-      offsetsArray.push(0);
-
-      colorsArray.push(i / n);
-      colorsArray.push(j / n);
-      colorsArray.push(1.0);
-      colorsArray.push(1.0); // Alpha channel
-    }
-  }
-  let offsets: Float32Array = new Float32Array(offsetsArray);
-  let colors: Float32Array = new Float32Array(colorsArray);
-  square.setInstanceVBOs(offsets, colors);
-  square.setNumInstances(n * n); // grid of "particles"
+  highwayMesh = new Square();
+  streetMesh = new Square();
+  road = new Roadmap(highwayLength, highwayAngle, blockWidth, blockHeight, ter);
+  road.process(seed, iteration);
+  road.instance(highwayMesh, streetMesh);
 }
 
 function main() {
@@ -60,6 +87,12 @@ function main() {
 
   // Add controls to the gui
   const gui = new DAT.GUI();
+  gui.add(controls, "seed", 0, 100);
+  gui.add(controls, "highwayLength", 0, 200);
+  gui.add(controls, "highwayAngle", 0, 180);
+  gui.add(controls, "seaLevel", 0, 1).step(0.01);
+  gui.add(controls, "displayMode", {Terrain: 0, Population: 1, Overlay: 2});
+  gui.add(controls, "loadScene");
 
   // get canvas and webgl context
   const canvas = <HTMLCanvasElement> document.getElementById('canvas');
@@ -74,12 +107,13 @@ function main() {
   // Initial call to load scene
   loadScene();
 
-  const camera = new Camera(vec3.fromValues(50, 50, 10), vec3.fromValues(50, 50, 0));
+  const camera = new Camera(vec3.fromValues(0, 0, 1), vec3.fromValues(0, 0, 0));
 
   const renderer = new OpenGLRenderer(canvas);
   renderer.setClearColor(0.2, 0.2, 0.2, 1);
+  gl.enable(gl.DEPTH_TEST);
   gl.enable(gl.BLEND);
-  gl.blendFunc(gl.ONE, gl.ONE); // Additive blending
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
   const instancedShader = new ShaderProgram([
     new Shader(gl.VERTEX_SHADER, require('./shaders/instanced-vert.glsl')),
@@ -90,19 +124,25 @@ function main() {
     new Shader(gl.VERTEX_SHADER, require('./shaders/flat-vert.glsl')),
     new Shader(gl.FRAGMENT_SHADER, require('./shaders/flat-frag.glsl')),
   ]);
+  flat.setTexture(ter.terrainMap);
+  flat.setMode(controls.displayMode);
 
   // This function will be called every frame
   function tick() {
     camera.update();
     stats.begin();
-    instancedShader.setTime(time);
-    flat.setTime(time++);
+    flat.setTexture(ter.terrainMap);
+    flat.setMode(controls.displayMode);
+
+    // instancedShader.setTime(time);
+    // flat.setTime(time++);
     gl.viewport(0, 0, window.innerWidth, window.innerHeight);
     renderer.clear();
-    renderer.render(camera, flat, [screenQuad]);
-    renderer.render(camera, instancedShader, [
-      square,
-    ]);
+    renderer.render(camera, flat, [square]);
+    gl.disable(gl.DEPTH_TEST);
+    renderer.render(camera, instancedShader, [streetMesh]);
+    renderer.render(camera, instancedShader, [highwayMesh]);
+    gl.enable(gl.DEPTH_TEST);
     stats.end();
 
     // Tell the browser to call `tick` again whenever it renders a new frame
@@ -113,13 +153,11 @@ function main() {
     renderer.setSize(window.innerWidth, window.innerHeight);
     camera.setAspectRatio(window.innerWidth / window.innerHeight);
     camera.updateProjectionMatrix();
-    flat.setDimensions(window.innerWidth, window.innerHeight);
   }, false);
 
   renderer.setSize(window.innerWidth, window.innerHeight);
   camera.setAspectRatio(window.innerWidth / window.innerHeight);
   camera.updateProjectionMatrix();
-  flat.setDimensions(window.innerWidth, window.innerHeight);
 
   // Start the render loop
   tick();
