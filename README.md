@@ -3,7 +3,7 @@
 ![](display.png)
 
 ## Demo
-- [Demo Page]()
+- [Demo Page](https://whaoran0718.github.io/hw05-road-generation/)
 
 ## Techniques
 ### Terrain and Population Density Map
@@ -11,9 +11,17 @@
  - Use a small size Worley noise to pixelate the map.
  - Use a Worley noise to generate the population density map based on the interpolation between shortest and secondary distance. Red is high and blue is low.
 
-Terrain, Population Density Map and Overlaid Map
+Terrain
 
- ![](terrain.png) ![](population.png) ![](overlay.png)
+ ![](terrain.png)
+ 
+Population Density Map
+ 
+ ![](population.png)
+ 
+Overlaid Map
+ 
+ ![](overlay.png)
 
 ### Highway Generation
 - Generate highway structure from a random point on the ground.
@@ -21,9 +29,13 @@ Terrain, Population Density Map and Overlaid Map
 - Check intersection during extension.
 - Prevent highway from branching in sea.
 
-Highway and highway over Population Density Map
+Highway
 
-![](highway.png) ![](highwayOverPopulation.png)
+![](highway.png)
+
+Highway over Population Density Map
+
+![](highwayOverPopulation.png)
 
 
 ### Street Generation
